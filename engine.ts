@@ -127,6 +127,7 @@ const getLineId = (
     .sort((a, b) => (a.x - b.x) || (a.y - b.y))
     .map((c) => `${c.x},${c.y}`)
     .join("|");
+
 export const getConnectedCount = (board: CellValue[][], x: number, y: number, player: Player): number => {
   let maxCount = 1; // the piece itself
   
@@ -320,6 +321,9 @@ export const getLegalActions = (state: GameState) => {
           const lines = getExactLinesAt(tempB, x, y, currentPlayer);
           if (lines.length > 0) continue;
           
+          // Check for square formation (illegal)
+          if (formsSquareAt(tempB, x, y, currentPlayer)) continue;
+          
           actions.push({ type: 'PLACE', x, y, capture: false });
         }       
       }     
@@ -339,6 +343,9 @@ export const getLegalActions = (state: GameState) => {
           // Check for 4+ connected (illegal)
           const connected = getConnectedCount(tempB, m.x, m.y, currentPlayer);
           if (connected > 3) continue;
+          
+          // Check for square formation (illegal)
+          if (formsSquareAt(tempB, m.x, m.y, currentPlayer)) continue;
           
           const lines = getExactLinesAt(tempB, m.x, m.y, currentPlayer);
           
