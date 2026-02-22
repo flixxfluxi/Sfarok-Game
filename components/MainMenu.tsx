@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Profile } from '../types';
 import { storageService } from './storageService';
 
@@ -13,9 +13,33 @@ interface MainMenuProps {
 }
 
 export const MainMenu: React.FC<MainMenuProps> = ({ onPlay, onSettings, onHowToPlay, darkMode, profile, t, isRTL }) => {
-  // Get stats for display
-  const stats = storageService.getStats();
+  // Live stats (Firestore) with fallback to local storage
+  const [stats, setStats] = useState(storageService.getStats());
   const winRate = stats.totalMatches > 0 ? ((stats.wins / stats.totalMatches) * 100).toFixed(0) : '0';
+
+  useEffect(() => {
+    // @ts-ignore
+    const firebase = (window as any).firebase;
+    if (!firebase) return;
+    // @ts-ignore
+    const db = firebase.firestore?.();
+    // @ts-ignore
+    const user = firebase.auth?.()?.currentUser;
+    if (!db || !user) return;
+
+    const unsubscribe = db.collection('stats').doc(user.uid).onSnapshot((doc: any) => {
+      if (doc && doc.exists) {
+        const data = doc.data() || {};
+        setStats(prev => ({ ...prev, ...data }));
+      }
+    }, (err: any) => {
+      console.error('stats onSnapshot error:', err);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);

@@ -1,50 +1,50 @@
 import React, { useState } from 'react';
-import { signInWithPopup, signInWithRedirect } from "firebase/auth";
-import { auth, googleProvider } from "../firebase";
-import { Profile } from '../types';
+import { signUp, login, loginWithGoogle } from './authService';
 
 interface LoginScreenProps {
-  onLogin: (profile: Profile) => void;
   t: (key: any) => string;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, t }) => {
-  const [email, setEmail] = useState('');
+export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
+  const [identifier, setIdentifier] = useState(''); // email or username
+  const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const handleGuest = () => {
-    onLogin({ email: 'guest@sfarok.com', nickname: 'Guest_' + Math.floor(Math.random() * 9999), isGuest: true });
-  };
+  const [isSignUp, setIsSignUp] = useState(false);
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Use signInWithPopup for modern browsers, fallback to redirect if needed
-      const result = await signInWithPopup(auth, googleProvider).catch((e) => {
-        if (e.code === 'auth/popup-blocked') {
-          return signInWithRedirect(auth, googleProvider);
-        }
-        throw e;
-      });
-
-      if (result) {
-        // Auth state listener in App.tsx will handle the state update
-      }
+      await loginWithGoogle();
+      // onAuthStateChanged in App.tsx will handle UI transition
     } catch (err: any) {
-      console.error("Google login error:", err);
-      setError(err.message || "Failed to login with Google");
+      console.error('Google login error:', err);
+      setError(err?.message || 'Failed to login with Google');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleEmailLogin = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email && nickname) {
-      onLogin({ email, nickname, isGuest: false });
+    setError(null);
+    setIsLoading(true);
+    try {
+      if (isSignUp) {
+        if (!identifier || !password || !nickname) throw new Error('Email, password and username required');
+        await signUp(identifier, password, nickname);
+      } else {
+        if (!identifier || !password) throw new Error('Email/username and password required');
+        await login(identifier, password);
+      }
+      // App's onAuthStateChanged will pick up authenticated user
+    } catch (err: any) {
+      console.error('Auth error:', err);
+      setError(err?.message || 'Authentication failed');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -64,33 +64,52 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, t }) => {
         </div>
       )}
 
-      <form onSubmit={handleEmailLogin} className="w-full space-y-5">
+      <form onSubmit={handleSubmit} className="w-full space-y-5">
         <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">{t('login_email')}</label>
-          <input 
-            type="email" 
-            placeholder="name@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full h-14 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl px-5 font-bold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all shadow-soft"
-          />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">{t('login_nickname')}</label>
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">{isSignUp ? t('signup_email') : t('login_email')}</label>
           <input 
             type="text" 
-            placeholder="WarriorName"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
+            placeholder="name@example.com or username"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             className="w-full h-14 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl px-5 font-bold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all shadow-soft"
           />
         </div>
+
+        <div className="space-y-2">
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">{t('login_password')}</label>
+          <input 
+            type="password" 
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full h-14 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl px-5 font-bold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all shadow-soft"
+          />
+        </div>
+
+        {isSignUp && (
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">{t('signup_username')}</label>
+            <input 
+              type="text" 
+              placeholder="WarriorName"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              className="w-full h-14 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl px-5 font-bold outline-none focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all shadow-soft"
+            />
+          </div>
+        )}
+
         <button 
-          disabled={!email || !nickname || isLoading}
+          disabled={!identifier || !password || (isSignUp && !nickname) || isLoading}
           className="w-full h-16 bg-primary text-white text-lg font-bold rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all disabled:opacity-30 disabled:scale-100 disabled:shadow-none mt-4"
         >
-          {t('login_btn')}
+          {isSignUp ? t('signup_btn') : t('login_btn')}
         </button>
+
+        <div className="text-center mt-2">
+          <button type="button" onClick={() => setIsSignUp(!isSignUp)} className="text-sm text-primary font-bold">{isSignUp ? t('have_account') : t('create_account')}</button>
+        </div>
       </form>
 
       <div className="w-full space-y-6">
@@ -113,13 +132,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, t }) => {
           {t('login_google_btn')}
         </button>
 
-        <button 
-          onClick={handleGuest}
-          disabled={isLoading}
-          className="w-full h-16 text-slate-600 dark:text-slate-300 font-bold rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-soft active:scale-95 transition-all disabled:opacity-50"
-        >
-          {t('login_guest')}
-        </button>
+        {/* Guest login removed - Firebase auth required */}
       </div>
     </div>
   );

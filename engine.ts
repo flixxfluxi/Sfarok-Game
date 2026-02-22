@@ -2,6 +2,10 @@ import { Player, CellValue, AILevel, GameState, PhaseSubState, Move, Piece } fro
 import { BOARD_SIZE, PIECES_PER_PLAYER } from './constants'; 
 import { gameService } from './components/gameService';  
 
+// DEBUG: temporary AI test mode
+const DEBUG_FORCE_PLAYER_WIN = true;
+let debugAIMoveCount = 0;
+
 /**  
  * ==========================================  
  * 0. AUDIO UTILITY
@@ -14,39 +18,81 @@ const playSound = (soundName: string) => {
     } catch (e) {}
 };
 
-/**  
- * ==========================================  
+/**
+ * ==========================================
  * 1. WIN SCREEN & STATS LOGIC
- * ==========================================  
- */ 
-let statsUpdated = false;  
+ * ==========================================
+ */
 
-function handleWin(winner: Player) {     
-    if (statsUpdated) return;     
-    statsUpdated = true;          
-    playSound('win');
+async function handleWin(winner: Player) {
+  if ((handleWin as any)._ran) return;
+  (handleWin as any)._ran = true;
+  console.log('Winner:', winner);
+  playSound('win');
 
+  // @ts-ignore
+  const playerColor = gameService.playerColor ?? Player.RED;
+  const result = winner === playerColor ? 'wins' : 'losses';
+
+  try {
     // @ts-ignore
-    const playerColor = gameService.playerColor ?? Player.RED; 
-    const result = winner === playerColor ? "wins" : "losses";
+    const db = window.firebase?.firestore();
+    // @ts-ignore
+    const user = window.firebase?.auth()?.currentUser;
+    if (db && user) {
+      try {
+        // compute match duration if available
+        const start = gameService.getMatchStartTime?.();
+        const durationSeconds = start ? Math.floor((Date.now() - start) / 1000) : 0;
+        console.log('Match duration:', durationSeconds);
+        console.log('Updating stats for:', user.uid);
 
-    try {
         // @ts-ignore
-        const db = window.firebase?.firestore();
+        const inc = window.firebase.firestore.FieldValue.increment(1);
         // @ts-ignore
-        const user = window.firebase?.auth()?.currentUser;
-        if (db && user) {
-            // @ts-ignore
-            const inc = window.firebase.firestore.FieldValue.increment(1);
-            const statsRef = db.collection('stats').doc(user.uid);
-            const data = result === "wins" ? { wins: inc, matches: inc } : { losses: inc, matches: inc };
-            statsRef.update(data).catch(() => statsRef.set(data, { merge: true }));
+        const incTime = window.firebase.firestore.FieldValue.increment(durationSeconds);
+        const statsRef = db.collection('stats').doc(user.uid);
+
+        // @ts-ignore
+        const incWins = result === 'wins' ? inc : window.firebase.firestore.FieldValue.increment(0);
+        // @ts-ignore
+        const incLosses = result === 'losses' ? inc : window.firebase.firestore.FieldValue.increment(0);
+
+        await statsRef.set({
+          matches: inc,
+          wins: incWins,
+          losses: incLosses,
+          timePlayed: incTime
+        }, { merge: true });
+
+        // Fetch and log current stats report
+        try {
+          const snap = await statsRef.get();
+          if (snap && snap.exists) {
+            const s = snap.data();
+            console.log({
+              matches: s.matches,
+              wins: s.wins,
+              losses: s.losses,
+              timePlayed: s.timePlayed
+            });
+          }
+        } catch (e) {
+          console.error('Failed to fetch stats after update:', e);
         }
-        gameService.endMatch(result);
-    } catch (e) {}
+      } catch (err) {
+        console.error('Failed updating stats:', err);
+      }
+    }
 
-    showWinAnimation(winner); 
-}  
+    // Ensure endMatch is called after we attempted to update remote stats
+    gameService.endMatch(result);
+  } catch (e) {
+    console.error('handleWin error:', e);
+  }
+
+  showWinAnimation(winner);
+}
 
 function showWinAnimation(winner: Player) {     
     const winnerName = winner === Player.RED ? 'RED' : 'BLUE';     
@@ -318,6 +364,11 @@ export const getLegalActions = (state: GameState) => {
     }   
   }
   
+  // Extra safety guard
+  if ((pendingCaptures || 0) > 0 && actions.length === 0) {
+    throw new Error('Illegal combo state detected');
+  }
+
   return actions; 
 };  
 
@@ -447,6 +498,20 @@ export function handleClickPiece(selectedPiece: Piece | null, clickedPiece: Piec
 export const getAIMove = (gameState: GameState, level: AILevel) => {
   const actions = getLegalActions(gameState);
   if (!actions || actions.length === 0) return null;
+
+  // DEBUG mode: force player win after some AI moves
+  if (DEBUG_FORCE_PLAYER_WIN) {
+    debugAIMoveCount++;
+    if (debugAIMoveCount >= 10) {
+      debugAIMoveCount = 0;
+      try {
+        handleWin(Player.RED);
+      } catch (e) {
+        console.error('DEBUG handleWin failed:', e);
+      }
+      return null;
+    }
+  }
   
   // During optional combo phase, prefer scoring moves over removes
   if (gameState.pendingCaptures > 0 && level !== AILevel.EASY) {

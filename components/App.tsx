@@ -17,10 +17,7 @@ import { translations, TranslationKey } from '../i18n';
 
 const App: React.FC = () => {
   const [activeScreen, setActiveScreen] = useState<Screen>(Screen.LOGIN);
-  const [profile, setProfile] = useState<Profile | null>(() => {
-    const saved = localStorage.getItem('dala_profile');
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [profile, setProfile] = useState<Profile | null>(null);
   
   const [settings, setSettings] = useState<Settings>(() => {
     const saved = localStorage.getItem('dala_settings');
@@ -49,11 +46,8 @@ const App: React.FC = () => {
           setActiveScreen(Screen.MENU);
         }
       } else {
-        // Only clear profile if it wasn't a guest session manually set
-        if (profile && !profile.isGuest) {
-          setProfile(null);
-          setActiveScreen(Screen.LOGIN);
-        }
+        setProfile(null);
+        setActiveScreen(Screen.LOGIN);
       }
     });
     return () => unsubscribe();
@@ -96,10 +90,7 @@ const App: React.FC = () => {
     localStorage.setItem('dala_settings', JSON.stringify(settings));
   }, [settings]);
 
-  useEffect(() => {
-    if (profile) localStorage.setItem('dala_profile', JSON.stringify(profile));
-    else localStorage.removeItem('dala_profile');
-  }, [profile]);
+  // Profile is managed by Firebase Auth state; do not persist manually.
 
   const switchTurn = (current: Player) => (current === Player.RED ? Player.BLUE : Player.RED);
 
@@ -125,12 +116,32 @@ const App: React.FC = () => {
       comboUsedPieceIds: []
     };
     setGameState(newState);
+    // Start match timing and set player color on gameService for stats logic
+    try {
+      const opponent = mode === GameMode.OFFLINE_AI ? 'AI' : mode === GameMode.OFFLINE_LOCAL ? 'Local' : (code || 'Online');
+      // @ts-ignore - attach runtime metadata used by engine.handleWin
+      (gameService as any).playerColor = color || Player.RED;
+      gameService.startMatch(mode, opponent);
+    } catch (e) {
+      console.error('Failed to start match in gameService:', e);
+    }
+
     if (mode === GameMode.ONLINE && code) {
       if (mpService.current) mpService.current.close();
       mpService.current = new MultiplayerService(code);
       mpService.current.onMessage(setGameState);
     }
   }, [gameState.mode]);
+
+  // Helper to start a game only if user is authenticated
+  const startGameIfAuthed = (mode: GameMode, ai?: AILevel, color?: Player, code?: string) => {
+    if (!profile) {
+      setActiveScreen(Screen.LOGIN);
+      return;
+    }
+    resetGame(mode, ai, color, code);
+    setActiveScreen(Screen.GAME);
+  };
 
   const countPiecesOnBoard = (board: CellValue[][], player: Player): number => {
     let count = 0;
@@ -394,11 +405,11 @@ const App: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex flex-col font-sans ${isRTL ? 'text-right' : 'text-left'}`} dir={isRTL ? 'rtl' : 'ltr'}>
-      {activeScreen === Screen.LOGIN && <LoginScreen onLogin={(p) => { setProfile(p); setActiveScreen(Screen.MENU); }} t={t} />}
-      {activeScreen === Screen.MENU && <MainMenu profile={profile} onPlay={() => setActiveScreen(Screen.MODE_SELECT)} onSettings={() => setActiveScreen(Screen.SETTINGS)} onHowToPlay={() => setActiveScreen(Screen.HOW_TO_PLAY)} darkMode={settings.darkMode} t={t} isRTL={isRTL} />}
-      {activeScreen === Screen.MODE_SELECT && <ModeSelection onBack={() => setActiveScreen(Screen.MENU)} onLocal={() => { resetGame(GameMode.OFFLINE_LOCAL); setActiveScreen(Screen.GAME); }} onAI={() => setActiveScreen(Screen.DIFFICULTY_SELECT)} onOnline={() => setActiveScreen(Screen.ONLINE_WAITING)} t={t} />}
-      {activeScreen === Screen.DIFFICULTY_SELECT && <DifficultySelection onBack={() => setActiveScreen(Screen.MODE_SELECT)} onSelect={(level) => { resetGame(GameMode.OFFLINE_AI, level); setActiveScreen(Screen.GAME); }} t={t} />}
-      {activeScreen === Screen.ONLINE_WAITING && <OnlineRoom onBack={() => setActiveScreen(Screen.MODE_SELECT)} onStart={(code, color) => { resetGame(GameMode.ONLINE, undefined, color, code); setActiveScreen(Screen.GAME); }} t={t} />}
+      {activeScreen === Screen.LOGIN && <LoginScreen t={t} />}
+      {activeScreen === Screen.MENU && <MainMenu profile={profile} onPlay={() => { if (!profile) setActiveScreen(Screen.LOGIN); else setActiveScreen(Screen.MODE_SELECT); }} onSettings={() => setActiveScreen(Screen.SETTINGS)} onHowToPlay={() => setActiveScreen(Screen.HOW_TO_PLAY)} darkMode={settings.darkMode} t={t} isRTL={isRTL} />}
+      {activeScreen === Screen.MODE_SELECT && <ModeSelection onBack={() => setActiveScreen(Screen.MENU)} onLocal={() => startGameIfAuthed(GameMode.OFFLINE_LOCAL)} onAI={() => setActiveScreen(Screen.DIFFICULTY_SELECT)} onOnline={() => setActiveScreen(Screen.ONLINE_WAITING)} t={t} />}
+      {activeScreen === Screen.DIFFICULTY_SELECT && <DifficultySelection onBack={() => setActiveScreen(Screen.MODE_SELECT)} onSelect={(level) => startGameIfAuthed(GameMode.OFFLINE_AI, level)} t={t} />}
+      {activeScreen === Screen.ONLINE_WAITING && <OnlineRoom onBack={() => setActiveScreen(Screen.MODE_SELECT)} onStart={(code, color) => startGameIfAuthed(GameMode.ONLINE, undefined, color, code)} t={t} />}
       {activeScreen === Screen.GAME && <GameScreen gameState={gameState} invalidMoveCell={invalidMoveCell} onCellClick={handleCellClick} onRestart={() => resetGame()} onBack={() => setActiveScreen(Screen.MENU)} onSurrender={() => setGameState(finalizeTurnInternal({ ...gameState, winner: switchTurn(gameState.currentPlayer) }))} onPerformAction={(a) => { const next = performAction(a, gameState); if (next) setGameState(next); }} settings={settings} t={t} />}
       {activeScreen === Screen.SETTINGS && <SettingsScreen settings={settings} onUpdate={setSettings} onBack={() => setActiveScreen(Screen.MENU)} onLogout={handleLogout} t={t} isRTL={isRTL} />}
       {activeScreen === Screen.HOW_TO_PLAY && <HowToPlay onBack={() => setActiveScreen(Screen.MENU)} t={t} />}

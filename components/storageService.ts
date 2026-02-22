@@ -15,12 +15,10 @@ export interface Stats {
   timePlayed: number;
 }
 
-export type GameResult = 'win' | 'loss' | 'draw';
-
 export interface MatchHistoryEntry {
   id: number;
   date: string;
-  result: GameResult;
+  result: 'win' | 'loss' | 'draw';
   mode: string;
   duration: number;
   opponent: string;
@@ -32,7 +30,7 @@ export class StorageService {
   private defaults = {
     settings: {
       language: 'en',
-      theme: 'light' as const,
+      theme: 'light',
       sound: true,
       notifications: true,
       moveAnimations: true
@@ -48,40 +46,38 @@ export class StorageService {
     matchHistory: [] as MatchHistoryEntry[]
   };
 
+  // Settings
   getSettings(): Settings {
-    const data = this.storage.getItem('game_settings');
-    return data ? JSON.parse(data) : this.defaults.settings;
+    return JSON.parse(this.storage.getItem('game_settings') || JSON.stringify(this.defaults.settings));
   }
 
   saveSettings(settings: Settings): void {
     this.storage.setItem('game_settings', JSON.stringify(settings));
   }
 
-  updateSetting(key: keyof Settings, value: Settings[keyof Settings]): void {
+  updateSetting(key: keyof Settings, value: any): void {
     const settings = this.getSettings();
     (settings as any)[key] = value;
     this.saveSettings(settings);
   }
 
+  // Stats
   getStats(): Stats {
-    const data = this.storage.getItem('game_stats');
-    return data ? JSON.parse(data) : this.defaults.stats;
+    return JSON.parse(this.storage.getItem('game_stats') || JSON.stringify(this.defaults.stats));
   }
 
   updateStats(delta: Partial<Stats>): void {
     const stats = this.getStats();
     Object.keys(delta).forEach((key) => {
       const k = key as keyof Stats;
-      if (typeof stats[k] === 'number') {
-        stats[k] = (stats[k] || 0) + (delta[k] || 0);
-      }
+      stats[k] = (stats[k] || 0) + (delta[k] || 0);
     });
     this.storage.setItem('game_stats', JSON.stringify(stats));
   }
 
+  // Match History
   getMatchHistory(): MatchHistoryEntry[] {
-    const data = this.storage.getItem('match_history');
-    return data ? JSON.parse(data) : this.defaults.matchHistory;
+    return JSON.parse(this.storage.getItem('match_history') || JSON.stringify(this.defaults.matchHistory));
   }
 
   addMatchToHistory(matchData: Omit<MatchHistoryEntry, 'id' | 'date'>): void {
@@ -92,7 +88,7 @@ export class StorageService {
       ...matchData
     };
     history.unshift(newEntry);
-    if (history.length > 50) history.pop();
+    if (history.length > 50) history.pop(); // Keep last 50 matches
     this.storage.setItem('match_history', JSON.stringify(history));
   }
 
@@ -100,6 +96,7 @@ export class StorageService {
     this.storage.setItem('match_history', JSON.stringify([]));
   }
 
+  // Utility
   clearAll(): void {
     this.storage.removeItem('game_settings');
     this.storage.removeItem('game_stats');
