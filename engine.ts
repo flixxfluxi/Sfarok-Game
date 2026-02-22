@@ -1,133 +1,83 @@
-import {
-  Player,
-  CellValue,
-  AILevel,
-  GameState,
-  PhaseSubState,
-  Move,
-  Piece,
-  GameResult
-} from "./types";
+import { Player, CellValue, AILevel, GameState, PhaseSubState, Move, Piece } from './types'; 
+import { BOARD_SIZE, PIECES_PER_PLAYER } from './constants'; 
+import { gameService } from './components/gameService';  
 
-import { BOARD_SIZE, PIECES_PER_PLAYER } from "./constants";
-import { gameService } from "./components/gameService";
-
-/**
- * ==========================================
+/**  
+ * ==========================================  
  * 0. AUDIO UTILITY
- * ==========================================
- */
+ * ==========================================  
+ */ 
 const playSound = (soundName: string) => {
-  try {
-    const audio = new Audio(`/sounds/${soundName}.mp3`);
-    audio.play().catch(() => {});
-  } catch {}
+    try {
+        const audio = new Audio(`/sounds/${soundName}.mp3`);
+        audio.play().catch(() => {}); 
+    } catch (e) {}
 };
 
-/**
- * ==========================================
+/**  
+ * ==========================================  
  * 1. WIN SCREEN & STATS LOGIC
- * ==========================================
- */
+ * ==========================================  
+ */ 
+let statsUpdated = false;  
 
-let statsUpdated = false;
+function handleWin(winner: Player) {     
+    if (statsUpdated) return;     
+    statsUpdated = true;          
+    playSound('win');
 
-function handleWin(winner: Player) {
-  if (statsUpdated) return;
-  statsUpdated = true;
-
-  playSound("win");
-
-  const playerColor: Player =
-    gameService.playerColor ?? Player.RED;
-
-  const result: GameResult =
-    winner === playerColor ? "win" : "loss";
-
-  try {
     // @ts-ignore
-    const db = window.firebase?.firestore();
-    // @ts-ignore
-    const user = window.firebase?.auth()?.currentUser;
+    const playerColor = gameService.playerColor ?? Player.RED; 
+    const result = winner === playerColor ? "wins" : "losses";
 
-    if (db && user) {
-      // @ts-ignore
-      const inc = window.firebase.firestore.FieldValue.increment(1);
-      const statsRef = db.collection("stats").doc(user.uid);
+    try {
+        // @ts-ignore
+        const db = window.firebase?.firestore();
+        // @ts-ignore
+        const user = window.firebase?.auth()?.currentUser;
+        if (db && user) {
+            // @ts-ignore
+            const inc = window.firebase.firestore.FieldValue.increment(1);
+            const statsRef = db.collection('stats').doc(user.uid);
+            const data = result === "wins" ? { wins: inc, matches: inc } : { losses: inc, matches: inc };
+            statsRef.update(data).catch(() => statsRef.set(data, { merge: true }));
+        }
+        gameService.endMatch(result);
+    } catch (e) {}
 
-      const data =
-        result === "win"
-          ? { wins: inc, matches: inc }
-          : { losses: inc, matches: inc };
+    showWinAnimation(winner); 
+}  
 
-      statsRef.update(data).catch(() =>
-        statsRef.set(data, { merge: true })
-      );
-    }
-
-    gameService.endMatch(result);
-  } catch {}
-
-  showWinAnimation(winner);
+function showWinAnimation(winner: Player) {     
+    const winnerName = winner === Player.RED ? 'RED' : 'BLUE';     
+    const color = winner === Player.RED ? '#ef4444' : '#3b82f6';          
+    const overlay = document.createElement('div');     
+    overlay.id = "force-win-overlay";     
+    overlay.style.cssText = `position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; font-family: 'Inter', sans-serif;`;      
+    
+    overlay.innerHTML = `
+        <div style="background: white; padding: 40px; border-radius: 24px; text-align: center; box-shadow: 0 0 40px ${color}; max-width: 90%;">
+            <h1 style="color: ${color}; font-size: 3.5rem; margin: 0; font-weight: 800;">${winnerName} WINS!</h1>
+            <div style="display: flex; gap: 15px; justify-content: center; margin-top: 25px;">
+                <button onclick="window.location.href='/mode-selection'" style="background: ${color}; color: white; border: none; padding: 15px 30px; font-size: 1.1rem; font-weight: bold; border-radius: 50px; cursor: pointer;">PLAY AGAIN</button>
+                <button onclick="window.location.href='/'" style="background: #f3f4f6; color: #1f2937; border: 2px solid #e5e7eb; padding: 15px 30px; font-size: 1.1rem; font-weight: bold; border-radius: 50px; cursor: pointer;">MAIN MENU</button>
+            </div>
+        </div>`;     
+    document.body.appendChild(overlay); 
 }
 
-function showWinAnimation(winner: Player) {
-  const winnerName =
-    winner === Player.RED ? "RED" : "BLUE";
-
-  const color =
-    winner === Player.RED ? "#ef4444" : "#3b82f6";
-
-  const overlay = document.createElement("div");
-  overlay.id = "force-win-overlay";
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0,0,0,0.9);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    font-family: 'Inter', sans-serif;
-  `;
-
-  overlay.innerHTML = `
-    <div style="background: white; padding: 40px; border-radius: 24px; text-align: center; box-shadow: 0 0 40px ${color}; max-width: 90%;">
-      <h1 style="color: ${color}; font-size: 3.5rem; margin: 0; font-weight: 800;">
-        ${winnerName} WINS!
-      </h1>
-      <div style="display: flex; gap: 15px; justify-content: center; margin-top: 25px;">
-        <button onclick="window.location.href='/mode-selection'" style="background: ${color}; color: white; border: none; padding: 15px 30px; font-size: 1.1rem; font-weight: bold; border-radius: 50px; cursor: pointer;">
-          PLAY AGAIN
-        </button>
-        <button onclick="window.location.href='/'" style="background: #f3f4f6; color: #1f2937; border: 2px solid #e5e7eb; padding: 15px 30px; font-size: 1.1rem; font-weight: bold; border-radius: 50px; cursor: pointer;">
-          MAIN MENU
-        </button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(overlay);
-}
+/**  
+ * ==========================================  
+ * 2. CORE ENGINE LOGIC
+ * ==========================================  
+ */ 
+const getLineId = (cells: {x: number, y: number}[]): string => 
+  cells.sort((a, b) => (a.x - b.x) || (a.y - b.y)).map(c => `${c.x},${c.y}`).join('|');
 
 /**
- * ==========================================
- * 2. CORE ENGINE UTILITIES
- * ==========================================
+ * Returns connected count in both directions for horizontal and vertical.
+ * Used to detect if placement/move creates 4 or more in a row.
  */
-
-const getLineId = (
-  cells: { x: number; y: number }[]
-): string =>
-  cells
-    .sort((a, b) => (a.x - b.x) || (a.y - b.y))
-    .map((c) => `${c.x},${c.y}`)
-    .join("|");
-
 export const getConnectedCount = (board: CellValue[][], x: number, y: number, player: Player): number => {
   let maxCount = 1; // the piece itself
   
@@ -305,7 +255,7 @@ export const getLegalActions = (state: GameState) => {
   // PLACEMENT & MOVEMENT PHASE
   const isPlacement = (placedCount?.[currentPlayer] || 0) < PIECES_PER_PLAYER;   
   
-  // During PLACEMENT: can place only if no exact-3 and no >3
+  // During PLACEMENT: can place only if no exact-3, no 4+, and no 2x2 square
   if (isPlacement) {     
     for (let x = 0; x < BOARD_SIZE; x++) {       
       for (let y = 0; y < BOARD_SIZE; y++) {         
@@ -313,16 +263,17 @@ export const getLegalActions = (state: GameState) => {
           const tempB = board.map(r => [...r]); 
           tempB[x][y] = currentPlayer;
           
-          // Check for 4+ connected (illegal)
-          const connected = getConnectedCount(tempB, x, y, currentPlayer);
-          if (connected > 3) continue;
-          
           // Check for exact-3 (illegal during placement)
           const lines = getExactLinesAt(tempB, x, y, currentPlayer);
           if (lines.length > 0) continue;
           
-          // Check for square formation (illegal)
-          if (formsSquareAt(tempB, x, y, currentPlayer)) continue;
+          // Check for 4+ connected (illegal during placement)
+          const connected = getConnectedCount(tempB, x, y, currentPlayer);
+          if (connected > 3) continue;
+          
+          // Check for 2x2 square (illegal during placement)
+          const square = formsSquareAt(tempB, x, y, currentPlayer);
+          if (square) continue;
           
           actions.push({ type: 'PLACE', x, y, capture: false });
         }       
@@ -340,12 +291,9 @@ export const getLegalActions = (state: GameState) => {
           tempB[x][y] = null; 
           tempB[m.x][m.y] = currentPlayer;
           
-          // Check for 4+ connected (illegal)
+          // Check for 4+ connected (illegal in movement)
           const connected = getConnectedCount(tempB, m.x, m.y, currentPlayer);
           if (connected > 3) continue;
-          
-          // Check for square formation (illegal)
-          if (formsSquareAt(tempB, m.x, m.y, currentPlayer)) continue;
           
           const lines = getExactLinesAt(tempB, m.x, m.y, currentPlayer);
           
@@ -355,7 +303,10 @@ export const getLegalActions = (state: GameState) => {
               actions.push({ type: 'MOVE', from: { x, y }, to: { x: m.x, y: m.y }, capture: true, newLines: lines });
             }
           } else {
-            // During NORMAL phase: exact-3 is capture, otherwise normal move
+            // During NORMAL phase: 
+            // - exact-3 is a capture move
+            // - otherwise it's a normal move
+            // - 2x2 is allowed during movement
             if (lines.length > 0) {
               actions.push({ type: 'MOVE', from: { x, y }, to: { x: m.x, y: m.y }, capture: true, newLines: lines });         
             } else {
