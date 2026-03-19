@@ -3,22 +3,23 @@ import { signUp, login, loginWithGoogle } from './authService';
 
 interface LoginScreenProps {
   t: (key: any) => string;
+  onGuestLogin: (nickname?: string) => void;
 }
 
-export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
-  const [identifier, setIdentifier] = useState(''); // email or username
+export const LoginScreen: React.FC<LoginScreenProps> = ({ t, onGuestLogin }) => {
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false); // ✅ Terms checkbox
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
     setError(null);
     try {
       await loginWithGoogle();
-      // onAuthStateChanged in App.tsx will handle UI transition
     } catch (err: any) {
       console.error('Google login error:', err);
       setError(err?.message || 'Failed to login with Google');
@@ -29,6 +30,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!acceptedTerms) {
+      setError('You must accept Terms & Privacy Policy');
+      return;
+    }
+
     setError(null);
     setIsLoading(true);
     try {
@@ -39,7 +45,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
         if (!identifier || !password) throw new Error('Email/username and password required');
         await login(identifier, password);
       }
-      // App's onAuthStateChanged will pick up authenticated user
     } catch (err: any) {
       console.error('Auth error:', err);
       setError(err?.message || 'Authentication failed');
@@ -48,11 +53,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
     }
   };
 
+  const handleGuestClick = () => {
+    const guestName = nickname.trim() || 'Guest';
+    onGuestLogin(guestName);
+  };
+
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-10 max-w-sm mx-auto w-full animate-fade-in">
       <div className="text-center">
         <div className="size-24 bg-primary rounded-4xl flex items-center justify-center mb-8 mx-auto shadow-2xl shadow-primary/30">
-           <span className="material-symbols-outlined text-white text-5xl">account_circle</span>
+          <span className="material-symbols-outlined text-white text-5xl">account_circle</span>
         </div>
         <h1 className="text-4xl font-black italic uppercase tracking-tighter leading-none mb-2">{t('login_welcome')}</h1>
         <p className="text-slate-500 dark:text-slate-400 text-sm font-medium opacity-80 uppercase tracking-widest">{t('login_sub')}</p>
@@ -100,8 +110,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
           </div>
         )}
 
-        <button 
-          disabled={!identifier || !password || (isSignUp && !nickname) || isLoading}
+        {/* Terms & Privacy */}
+        <div className="flex items-center space-x-2">
+          <input
+            type="checkbox"
+            checked={acceptedTerms}
+            onChange={(e) => setAcceptedTerms(e.target.checked)}
+            id="terms-checkbox"
+            className="h-4 w-4"
+          />
+          <label htmlFor="terms-checkbox" className="text-xs text-slate-400">
+            I agree to the <a href="/terms" className="text-primary underline">Terms & Conditions</a> and <a href="/privacy" className="text-primary underline">Privacy Policy</a>
+          </label>
+        </div>
+
+        <button
+          disabled={!identifier || !password || (isSignUp && !nickname) || !acceptedTerms || isLoading}
           className="w-full h-16 bg-primary text-white text-lg font-bold rounded-2xl shadow-xl shadow-primary/20 hover:shadow-primary/30 active:scale-95 transition-all disabled:opacity-30 disabled:scale-100 disabled:shadow-none mt-4"
         >
           {isSignUp ? t('signup_btn') : t('login_btn')}
@@ -132,7 +156,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ t }) => {
           {t('login_google_btn')}
         </button>
 
-        {/* Guest login removed - Firebase auth required */}
+        <button
+          onClick={handleGuestClick}
+          className="w-full h-16 bg-gray-500 text-white font-bold rounded-2xl shadow-lg hover:bg-gray-600 active:scale-95 transition-all flex items-center justify-center gap-3"
+        >
+          {t('login_guest') || 'Continue as Guest'}
+        </button>
       </div>
     </div>
   );
